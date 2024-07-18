@@ -1,0 +1,22 @@
+﻿using AutoMapper;using Microsoft.AspNetCore.Authentication.JwtBearer;using Microsoft.AspNetCore.Authorization;using Microsoft.AspNetCore.Http;using Microsoft.AspNetCore.Identity;using Microsoft.AspNetCore.Mvc;using Order_Manag.Core.Entites;using Order_Manag.Core.Repository.Contract;using Order_Manag.Core.Specifications;using Order_Manag.Core.Specifications.ProductsSpec;using Order_Management.DTOS;using Order_Management.HandlingErrors;namespace Order_Management.Controllers{    public class OrderController : BaseController    {        private readonly IGenericRepository<Order> _orderRepo;        private readonly IMapper _mapper;        public OrderController(IGenericRepository<Order> productRepo, IMapper mapper)        {            _orderRepo = productRepo;            _mapper = mapper;        }
+
+
+        // [Authorize]
+        [HttpGet]        public async Task<ActionResult<IEnumerable<Order>>> GetAll()        {            var Spec = new OrderWithIncludeAndQuerySpec();            var product = await _orderRepo.GetAllWithSpecAsync(Spec);
+            return Ok(product);        }        [HttpGet("{id}")]        [ProducesResponseType(typeof(Order), StatusCodes.Status200OK)]        [ProducesResponseType(typeof(ApisResponse), StatusCodes.Status404NotFound)]        public async Task<ActionResult<Order>> GetById(int id)        {            var Spec = new OrderWithIncludeAndQuerySpec(id);            var product = await _orderRepo.GetByIdWithSpecAsync(Spec);            if (product is null) return NotFound(new ApisResponse(404));
+            return Ok(product);        }
+
+
+        [HttpPost()]        [ProducesResponseType(typeof(Order), StatusCodes.Status200OK)]        [ProducesResponseType(typeof(ApisResponse), StatusCodes.Status404NotFound)]        public async Task<ActionResult<Order>> Add(OrderRequestDto order)        {            var newOrder = new Order()            {                CustomerId = order.CustomerId,                PaymentIntentId = order.PaymentIntentId,                Status = order.Status,                TotalAmount = order.TotalAmount,                OrderItems = order.OrderItems.Select(x => new OrderItem()                {                    ProductId = x.ProductId,                    Discount = x.Discount,                    Quantity = x.Quantity,                    UnitPrice = x.UnitPrice,
+
+                }).ToList()            };            var product = await _orderRepo.AddAsync(newOrder);            await _orderRepo.SaveChangesAsync();            if (product is null) return NotFound(new ApisResponse(404));
+            return Ok(newOrder);        }        [HttpPut("{id}")]        [ProducesResponseType(typeof(Order), StatusCodes.Status200OK)]        [ProducesResponseType(typeof(ApisResponse), StatusCodes.Status404NotFound)]        public async Task<ActionResult<Order>> Update([FromRoute] int id, OrderRequestDto order)        {            var Spec = new OrderWithIncludeAndQuerySpec(id);            var oldorder = await _orderRepo.GetByIdWithSpecAsync(Spec);
+            oldorder.PaymentIntentId = order.PaymentIntentId;
+            oldorder.Status = order.Status;
+            oldorder.TotalAmount = order.TotalAmount;
+            oldorder.CustomerId = order.CustomerId;
+
+            var oldItems = oldorder.OrderItems
+            .Where(x => !order.OrderItems.Any(y => y.ProductId == x.ProductId))
+            .ToList();            foreach (var item in oldItems)            {                oldorder.OrderItems.Remove(item);            }            oldorder.OrderItems = order.OrderItems.Select(x =>            {                int id = 0;                if (oldorder.OrderItems.Any(y => y.ProductId == x.ProductId))                    id = oldorder.OrderItems.FirstOrDefault(y => y.ProductId == x.ProductId).Id;                return new OrderItem()                {                    Id = id,                    ProductId = x.ProductId,                    Discount = x.Discount,                    Quantity = x.Quantity,                    UnitPrice = x.UnitPrice,                };            }).ToList();            var product = _orderRepo.Update(oldorder);            await _orderRepo.SaveChangesAsync();            if (product is null) return NotFound(new ApisResponse(404));
+            return Ok(oldorder);        }    }}
